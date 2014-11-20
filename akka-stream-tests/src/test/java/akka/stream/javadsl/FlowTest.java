@@ -337,7 +337,7 @@ public class FlowTest extends StreamTest {
 
     final Source<String> in1 = Source.from(input1);
     final Source<Integer> in2 = Source.from(input2);
-    final Zip<String, Integer> zip = Zip.create();
+    final ZipWith<String, Integer, Pair<String, Integer>> zip = Zip.create();
     final KeyedSink<Pair<String, Integer>, Future<BoxedUnit>> out = Sink
         .foreach(new Procedure<Pair<String, Integer>>() {
           @Override

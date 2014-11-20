@@ -49,7 +49,7 @@ private[http] class HttpClientPipeline(effectiveSettings: ClientConnectionSettin
 
     val pipeline = FlowGraph { implicit b ⇒
       val bypassFanout = Broadcast[(HttpRequest, Any)]("bypassFanout")
-      val bypassFanin = Zip[HttpResponse, Any]("bypassFanin")
+      val bypassFanin = ZipWith("bypassFanin", (h: HttpResponse, a: Any) ⇒ (h, a))
 
       val requestPipeline =
         Flow[(HttpRequest, Any)]

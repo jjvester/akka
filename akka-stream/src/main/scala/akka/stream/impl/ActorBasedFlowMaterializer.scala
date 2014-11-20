@@ -17,7 +17,6 @@ import akka.actor._
 import akka.stream.{ FlowMaterializer, MaterializerSettings, OverflowStrategy, TimerTransformer, Transformer }
 import akka.stream.MaterializationException
 import akka.stream.actor.ActorSubscriber
-import akka.stream.impl.Zip.ZipAs
 import akka.stream.scaladsl._
 import akka.pattern.ask
 import org.reactivestreams.{ Processor, Publisher, Subscriber }
@@ -126,8 +125,8 @@ private[akka] object Ast {
     override def name = "balance"
   }
 
-  final case class Zip(as: ZipAs) extends FanInAstNode {
-    override def name = "zip"
+  final case class ZipWith(f: (Any, Any) ⇒ Any) extends FanInAstNode {
+    override def name = "zipWith"
   }
 
   case object Unzip extends FanOutAstNode {
@@ -380,14 +379,14 @@ case class ActorBasedFlowMaterializer(override val settings: MaterializerSetting
         val impl = fanin match {
           case Ast.Merge                  ⇒ actorOf(FairMerge.props(settings, inputCount), actorName)
           case Ast.MergePreferred         ⇒ actorOf(UnfairMerge.props(settings, inputCount), actorName)
-          case zip: Ast.Zip               ⇒ actorOf(Zip.props(settings, zip.as), actorName)
+          case Ast.ZipWith(zip)           ⇒ actorOf(ZipWith.props(settings, zip), actorName)
           case Ast.Concat                 ⇒ actorOf(Concat.props(settings), actorName)
           case Ast.FlexiMergeNode(merger) ⇒ actorOf(FlexiMergeImpl.props(settings, inputCount, merger.createMergeLogic()), actorName)
         }
 
         val publisher = new ActorPublisher[Out](impl)
         impl ! ExposedPublisher(publisher.asInstanceOf[ActorPublisher[Any]])
-        val subscribers = Vector.tabulate(inputCount)(FanIn.SubInput[In](impl, _))
+        val subscribers = Vector.tabulate(inputCount)(FanIn.SubInput[In](impl, _)) // FIXME switch to List.tabulate for inputCount < 8?
         (subscribers, List(publisher))
 
       case fanout: Ast.FanOutAstNode ⇒
@@ -398,7 +397,7 @@ case class ActorBasedFlowMaterializer(override val settings: MaterializerSetting
           case Ast.FlexiRouteNode(route)          ⇒ actorOf(FlexiRouteImpl.props(settings, outputCount, route.createRouteLogic()), actorName)
         }
 
-        val publishers = Vector.tabulate(outputCount)(id ⇒ new ActorPublisher[Out](impl) {
+        val publishers = Vector.tabulate(outputCount)(id ⇒ new ActorPublisher[Out](impl) { // FIXME switch to List.tabulate for inputCount < 8?
           override val wakeUpMsg = FanOut.SubstreamSubscribePending(id)
         })
         impl ! FanOut.ExposedPublishers(publishers.asInstanceOf[immutable.Seq[ActorPublisher[Any]]])

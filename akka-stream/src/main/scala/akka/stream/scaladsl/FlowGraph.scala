@@ -240,32 +240,45 @@ final class Balance[T](override val name: Option[String], val waitForAllDownstre
 
 object Zip {
   /**
-   * Create a new anonymous `Zip` vertex with the specified input types.
-   * Note that a `Zip` instance can only be used at one place (one vertex)
+   * Create a new anonymous `ZipWith` vertex with the specified input types and zipping-function
+   * which creates `Tuple2`s.
+   * Note that a ZipWith` instance can only be used at one place (one vertex)
    * in the `FlowGraph`. This method creates a new instance every time it
    * is called and those instances are not `equal`.*
    */
-  def apply[A, B]: Zip[A, B] = new Zip[A, B](None)
+  def apply[A, B]: ZipWith[A, B, (A, B)] = new ZipWith(None, _toTuple.asInstanceOf[(A, B) ⇒ (A, B)])
+  private[this] final val _toTuple: (Any, Any) ⇒ (Any, Any) = (a, b) ⇒ (a, b)
+}
 
+object ZipWith {
   /**
-   * Create a named `Zip` vertex with the specified input types.
-   * Note that a `Zip` instance can only be used at one place (one vertex)
+   * Create a new anonymous `ZipWith` vertex with the specified input types.
+   * Note that a `ZipWith` instance can only be used at one place (one vertex)
    * in the `FlowGraph`. This method creates a new instance every time it
    * is called and those instances are not `equal`.*
    */
-  def apply[A, B](name: String): Zip[A, B] = new Zip[A, B](Some(name))
+  def apply[A, B, C](f: (A, B) ⇒ C): ZipWith[A, B, C] = new ZipWith[A, B, C](None, f)
+  /**
+   * Create a named `ZipWith` vertex with the specified input types.
+   * Note that a `ZipWith` instance can only be used at one place (one vertex)
+   * in the `FlowGraph`. This method creates a new instance every time it
+   * is called and those instances are not `equal`.*
+   */
+  def apply[A, B, C](name: String, f: (A, B) ⇒ C): ZipWith[A, B, C] = new ZipWith[A, B, C](Some(name), f)
 
-  class Left[A, B] private[akka] (private[akka] val vertex: Zip[A, B]) extends JunctionInPort[A] {
+  final class Left[A, B, C] private[akka] (private[akka] val vertex: ZipWith[A, B, C]) extends JunctionInPort[A] {
+    type NextT = C
     override private[akka] def port = 0
-    type NextT = (A, B)
     override private[akka] def next = vertex.out
   }
-  class Right[A, B] private[akka] (private[akka] val vertex: Zip[A, B]) extends JunctionInPort[B] {
+
+  final class Right[A, B, C] private[akka] (private[akka] val vertex: ZipWith[A, B, C]) extends JunctionInPort[B] {
+    type NextT = C
     override private[akka] def port = 1
-    type NextT = (A, B)
     override private[akka] def next = vertex.out
   }
-  class Out[A, B] private[akka] (private[akka] val vertex: Zip[A, B]) extends JunctionOutPort[(A, B)]
+
+  final class Out[A, B, C] private[akka] (private[akka] val vertex: ZipWith[A, B, C]) extends JunctionOutPort[C]
 }
 
 /**
@@ -273,21 +286,20 @@ object Zip {
  * by combining corresponding elements in pairs. If one of the two streams is
  * longer than the other, its remaining elements are ignored.
  */
-private[akka] class Zip[A, B](override val name: Option[String]) extends FlowGraphInternal.InternalVertex {
-  import akka.stream.impl.Zip.AsScalaTuple2
-
-  val left = new Zip.Left(this)
-  val right = new Zip.Right(this)
-  val out = new Zip.Out(this)
+private[akka] final class ZipWith[A, B, C](override val name: Option[String], f: (A, B) ⇒ C) extends FlowGraphInternal.InternalVertex {
+  val left = new ZipWith.Left(this)
+  val right = new ZipWith.Right(this)
+  val out = new ZipWith.Out(this)
 
   override def minimumInputCount: Int = 2
   override def maximumInputCount: Int = 2
   override def minimumOutputCount: Int = 1
   override def maximumOutputCount: Int = 1
 
-  override private[akka] def astNode: FanInAstNode = Ast.Zip(AsScalaTuple2)
+  // FIXME cache
+  private[akka] override def astNode: FanInAstNode = Ast.ZipWith(f.asInstanceOf[(Any, Any) ⇒ Any])
 
-  final override private[scaladsl] def newInstance() = new Zip[A, B](name = None)
+  private[scaladsl] final override def newInstance() = new ZipWith[A, B, C](name = None, f = f)
 }
 
 object Unzip {
@@ -307,16 +319,17 @@ object Unzip {
    */
   def apply[A, B](name: String): Unzip[A, B] = new Unzip[A, B](Some(name))
 
-  class In[A, B] private[akka] (private[akka] val vertex: Unzip[A, B]) extends JunctionInPort[(A, B)] {
+  final class In[A, B] private[akka] (private[akka] val vertex: Unzip[A, B]) extends JunctionInPort[(A, B)] {
     override type NextT = Nothing
-    override private[akka] def next = NoNext
+    private[akka] override def next = NoNext
   }
 
-  class Left[A, B] private[akka] (private[akka] val vertex: Unzip[A, B]) extends JunctionOutPort[A] {
-    override private[akka] def port = 0
+  final class Left[A, B] private[akka] (private[akka] val vertex: Unzip[A, B]) extends JunctionOutPort[A] {
+    private[akka] override def port = 0
   }
-  class Right[A, B] private[akka] (private[akka] val vertex: Unzip[A, B]) extends JunctionOutPort[B] {
-    override private[akka] def port = 1
+
+  final class Right[A, B] private[akka] (private[akka] val vertex: Unzip[A, B]) extends JunctionOutPort[B] {
+    private[akka] override def port = 1
   }
 }
 
@@ -333,9 +346,9 @@ final class Unzip[A, B](override val name: Option[String]) extends FlowGraphInte
   override def minimumOutputCount: Int = 2
   override def maximumOutputCount: Int = 2
 
-  override private[akka] def astNode = Ast.Unzip
+  private[akka] override def astNode = Ast.Unzip
 
-  final override private[scaladsl] def newInstance() = new Unzip[A, B](name = None)
+  private[scaladsl] final override def newInstance() = new Unzip[A, B](name = None)
 }
 
 object Concat {
