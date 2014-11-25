@@ -21,7 +21,7 @@ import akka.util.ByteString
 /**
  * INTERNAL API
  */
-private[http] class HttpServerPipeline(settings: ServerSettings, log: LoggingAdapter)(implicit fm: FlowMaterializer)
+private[http] class HttpServerPipeline(settings: ServerSettings, log: LoggingAdapter)
   extends (StreamTcp.IncomingTcpConnection ⇒ Http.IncomingConnection) {
 
   val rootParser = new HttpRequestParser(settings.parserSettings, settings.rawRequestUriHeader)()
@@ -34,15 +34,12 @@ private[http] class HttpServerPipeline(settings: ServerSettings, log: LoggingAda
   def apply(tcpConn: StreamTcp.IncomingTcpConnection): Http.IncomingConnection = {
     import FlowGraphImplicits._
 
-    val networkIn = Source(tcpConn.inputStream)
-    val networkOut = Sink(tcpConn.outputStream)
+    val userIn = UndefinedSink[HttpRequest]
+    val userOut = UndefinedSource[HttpResponse]
 
-    val userIn = Sink.publisher[HttpRequest]
-    val userOut = Source.subscriber[HttpResponse]
-
-    val pipeline = FlowGraph { implicit b ⇒
+    val pipeline = Flow() { implicit b ⇒
       val bypassFanout = Broadcast[(RequestOutput, Source[RequestOutput])]("bypassFanout")
-      val bypassFanin = Merge[Any]("merge")
+      val bypassFanin = Merge[Any]("bypassFanin")
 
       val rootParsePipeline =
         Flow[ByteString]
@@ -69,13 +66,15 @@ private[http] class HttpServerPipeline(settings: ServerSettings, log: LoggingAda
           .collect[MessageStart with RequestOutput] { case (x: MessageStart, _) ⇒ x }
 
       //FIXME: the graph is unnecessary after fixing #15957
-      networkIn ~> rootParsePipeline ~> bypassFanout ~> requestTweaking ~> userIn
+      userOut ~> bypassFanin ~> rendererPipeline ~> tcpConn.stream ~> rootParsePipeline ~> bypassFanout ~> requestTweaking ~> userIn
       bypassFanout ~> bypass ~> bypassFanin
-      userOut ~> bypassFanin ~> rendererPipeline ~> networkOut
 
-    }.run()
+      b.allowCycles()
 
-    Http.IncomingConnection(tcpConn.remoteAddress, pipeline.get(userIn), pipeline.get(userOut))
+      userOut -> userIn
+    }
+
+    Http.IncomingConnection(tcpConn.remoteAddress, pipeline)
   }
 
   /**

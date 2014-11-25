@@ -31,6 +31,11 @@ trait Flow[-In, +Out] extends FlowOps[Out] {
   def to(sink: Sink[Out]): Sink[In]
 
   /**
+   * Join this [[Flow]] to another [[Flow]], creating a [[RunnableFlow]]
+   */
+  def join(flow: Flow[Out, In]): RunnableFlow
+
+  /**
    *
    * Connect the `Source` to this `Flow` and then connect it to the `Sink` and run it. The returned tuple contains
    * the materialized values of the `Source` and `Sink`, e.g. the `Subscriber` of a [[SubscriberSource]] and
@@ -59,6 +64,12 @@ trait Flow[-In, +Out] extends FlowOps[Out] {
     }
   }
 
+  /**
+   * Add a key that will have a value available after materialization.
+   * The key can only use other keys if they have been added to the flow
+   * before this key.
+   */
+  def withKey(key: Key): Flow[In, Out]
 }
 
 object Flow {
@@ -80,13 +91,18 @@ object Flow {
    * a [[FlowGraphBuilder]] and returns the `UndefinedSource` and `UndefinedSink`.
    */
   def apply[I, O](graph: PartialFlowGraph)(block: FlowGraphBuilder ⇒ (UndefinedSource[I], UndefinedSink[O])): Flow[I, O] =
-    createFlowFromBuilder(new FlowGraphBuilder(graph.graph), block)
+    createFlowFromBuilder(new FlowGraphBuilder(graph), block)
 
   private def createFlowFromBuilder[I, O](builder: FlowGraphBuilder,
                                           block: FlowGraphBuilder ⇒ (UndefinedSource[I], UndefinedSink[O])): Flow[I, O] = {
     val (in, out) = block(builder)
     builder.partialBuild().toFlow(in, out)
   }
+
+  /**
+   * Create a [[Flow]] from a seemingly disconnected [[Source]] and [[Sink]] pair.
+   */
+  def apply[I, O](sink: Sink[I], source: Source[O]): Flow[I, O] = GraphFlow(sink, source)
 }
 
 /**
