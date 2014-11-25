@@ -381,6 +381,13 @@ class Flow[-In, +Out](delegate: scaladsl.Flow[In, Out]) {
   def concat(second: javadsl.Source[In]): javadsl.Flow[In, Out] =
     new Flow(delegate.concat(second.asScala))
 
+  /**
+   * Add a key that will have a value available after materialization.
+   * The key can only use other keys if they have been added to the flow
+   * before this key.
+   */
+  def withKey[T](key: javadsl.Key[T]): Flow[In, Out] =
+    new Flow(delegate.withKey(key.asScala))
 }
 
 /**

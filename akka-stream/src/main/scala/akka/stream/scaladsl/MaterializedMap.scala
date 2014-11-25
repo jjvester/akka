@@ -45,7 +45,7 @@ trait MaterializedMap {
   def iterator: Iterator[(AnyRef, Any)]
 }
 
-object MaterializedMap extends {
+object MaterializedMap {
   private val emptyInstance = MaterializedMapImpl(Map.empty)
 
   def empty: MaterializedMap = emptyInstance
@@ -80,12 +80,10 @@ private[stream] case class MaterializedMapImpl(map: Map[AnyRef, Any]) extends Ma
 
   override def get(key: Key): key.MaterializedType = map.getOrElse(key, throw failure("Key", key)).asInstanceOf[key.MaterializedType]
 
-  override def merge(otherMap: MaterializedMap) = {
-    val result = if (map.isEmpty) otherMap
+  override def merge(otherMap: MaterializedMap) =
+    if (map.isEmpty) otherMap
     else if (otherMap.isEmpty) this
     else MaterializedMapImpl(map ++ otherMap.iterator)
-    result
-  }
 
   override def updated(key: AnyRef, value: Any) = MaterializedMapImpl(map.updated(key, value))
 

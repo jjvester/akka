@@ -1016,7 +1016,8 @@ class FlowGraphBuilder private[akka] (
   }
 
   /**
-   * Allow multiple apparently disconnected graphs in the same graph. The might still be connected through source/sink pairs.
+   * Allow multiple apparently disconnected graphs in the same graph.
+   * They might still be connected through source/sink pairs.
    */
   private[scaladsl] def allowDisconnected(): Unit = {
     disconnectedAllowed = true
